@@ -9,39 +9,69 @@ from __future__ import annotations
 import numpy as np
 
 from game2048.observation import Observation
-from game2048.rules import move_board
 from game2048.types import Move
 
+# ==============================================================================
+# IMPORT MODULE (bỏ comment khi các lính cát code xong)
+# ==============================================================================
+# from student.search import get_best_move_expectimax
+# from student.tt_cache import clear_cache
+# from student.board_ops import get_empty_cells
+# ==============================================================================
 
 class Agent:
     # Đổi tên này thành tên đội; nó sẽ xuất hiện trong UI và file kết quả.
-    name = "starter-one-ply"
+    name = "Group_6"
 
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván nếu thuật toán của bạn có dùng."""
+        # Gọi hàm xóa Transposition Table của Lính cát 2 ở đây để không bị đầy RAM
+        # clear_cache()
+        pass
 
-    @staticmethod
-    def evaluate(board: np.ndarray, merge_score: int) -> float:
-        """Heuristic mẫu; hãy thay bằng thiết kế của nhóm."""
-        empty_cells = int(np.count_nonzero(board == 0))
-        largest_tile = int(board.max())
-        return 250.0 * empty_cells + merge_score + 0.1 * largest_tile
-
-    def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
-        """Trả về đúng một phần tử ``Move`` có trong ``obs.legal_moves``.
-
-        Khi chấm theo tổng thời gian, ``time_limit_ms`` và
-        ``obs.time_remaining_ms`` là ngân sách còn lại của cả ván — không phải
-        lời hứa rằng mỗi nước được phép dùng hết số đó.
+    """
+        Quyết định nước đi và phân bổ ngân sách 60s/ván.
         """
         if not obs.legal_moves:
             raise ValueError("choose_move được gọi ở trạng thái kết thúc")
 
-        best_move = obs.legal_moves[0]
-        best_value = float("-inf")
-        for move in obs.legal_moves:
-            next_board, merge_score, _changed = move_board(obs.board, move)
-            value = self.evaluate(next_board, merge_score)
-            if value > best_value:
-                best_value, best_move = value, move
+        # ----------------------------------------------------------------------
+        # BƯỚC 1: TÍNH TOÁN NGÂN SÁCH THỜI GIAN CHO NƯỚC ĐI NÀY
+        # ----------------------------------------------------------------------
+        # Đếm số ô trống (Tạm thời dùng numpy, sau này dùng hàm siêu tốc của Lính cát 4)
+        empty_cells = int(np.count_nonzero(obs.board == 0))
+        
+        # Chiến thuật chia thời gian cực kỳ quan trọng:
+        if empty_cells >= 10:
+            # Đầu game, bàn rất thoáng: Đi thật nhanh (cho phép 20ms)
+            time_for_this_move = 20.0
+        elif empty_cells >= 5:
+            # Giữa game: Trích một phần nhỏ quỹ thời gian còn lại
+            time_for_this_move = time_limit_ms / 250.0
+        elif empty_cells >= 3:
+            # Bàn khá chật: Bắt đầu nghĩ sâu hơn
+            time_for_this_move = time_limit_ms / 50.0
+        else:
+            # Khê (<3 ô trống): Dồn nhiều thời gian để gỡ bí
+            time_for_this_move = time_limit_ms / 15.0
+            
+        # Đặt ngưỡng an toàn để không bao giờ xài lố quá 1 giây cho 1 nước
+        time_for_this_move = min(time_for_this_move, 1000.0)
+        
+        # ----------------------------------------------------------------------
+        # BƯỚC 2: GỌI THUẬT TOÁN TÌM KIẾM CỦA TEAM (EXPECTIMAX + TT CACHE)
+        # ----------------------------------------------------------------------
+        # Khi Lính cát 1 & 2 code xong, bỏ comment đoạn dưới đây:
+        
+        """
+        best_move = get_best_move_expectimax(
+            board=obs.board,
+            legal_moves=obs.legal_moves,
+            time_budget_ms=time_for_this_move
+        )
         return best_move
+        """
+        
+        # [TẠM THỜI]: Trả về nước đi đầu tiên hợp lệ để file không bị báo lỗi 
+        # trong lúc chờ code xong các file khác.
+        return obs.legal_moves[0]
