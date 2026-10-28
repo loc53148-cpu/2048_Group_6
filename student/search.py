@@ -92,6 +92,18 @@ class ExpectimaxExpansion:
 
         return (tile_score*tile_chance).sum()
 
-    class MCTSNode:
-        def __init__(self):
-            pass
+class MCTSNode:
+    def __init__(self, board: np.ndarray, parent=None, cause: Move=None, isBot: bool=True):
+        self.board = board
+        self.parent = parent
+        self.children = []
+        self.simulated_value = 0.0
+        self.visits = 0
+        self.cause = cause
+        self.untried_actions = [move for move in Move if move_board(board, move)[2]] if isBot else np.argwhere(board==0)
+
+    #Utility methods
+    def __is_terminal(self):
+        pass
+
+    

@@ -27,7 +27,8 @@ class Agent:
         #return 250.0 * empty_cells + merge_score + 0.1 * largest_tile
 
         #Simple Expectimax with risk factor
-        return ExpectimaxExpansion.maximizer(board, merge_score)
+        root = ExpectimaxExpansion()
+        return root.maximizer(board, merge_score)
 
     def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
         """Trả về đúng một phần tử ``Move`` có trong ``obs.legal_moves``.

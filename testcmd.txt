@@ -1,0 +1,5 @@
+---Setup terminal---
+conda activate 2048proj
+cd OneDrive\Documents\AssignmentProjects\BDTT-TKNC\ai-2048-midterm
+---Running benchmark---
+python scripts/benchmark_agent.py --agent student.agent:Agent --seeds 1 --start-seed 42 --total-time-sec 60
