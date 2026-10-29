@@ -11,5 +11,4 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--agent", help="Optional package.module:AgentClass")
     args = parser.parse_args()
-    launch(args.seed, agent_spec=args.agent)
-
+    launch(args.seed, agent_spec=args.agent) 

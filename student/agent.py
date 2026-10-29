@@ -7,11 +7,13 @@ nước đi, nhưng cố ý chưa xử lý ô ngẫu nhiên và chưa phải m�
 from __future__ import annotations
 
 import numpy as np
+import random
+import math
 
 from game2048.observation import Observation
 from game2048.rules import move_board
 from game2048.types import Move
-from student.search import ExpectimaxExpansion
+from student.search import ExpectimaxExpansion, MCTSNode
 
 class Agent:
     # Đổi tên này thành tên đội; nó sẽ xuất hiện trong UI và file kết quả.
@@ -30,6 +32,9 @@ class Agent:
         root = ExpectimaxExpansion()
         return root.maximizer(board, merge_score)
 
+        #MCTS method
+        #root = MCTSNode(board, cur_score=merge_score)
+
     def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
         """Trả về đúng một phần tử ``Move`` có trong ``obs.legal_moves``.
 
@@ -47,3 +52,5 @@ class Agent:
             if value > best_value:
                 best_value, best_move = value, move
         return best_move
+        #root = MCTSNode(obs.board, cur_score=obs.score)
+        #return root.search(150)

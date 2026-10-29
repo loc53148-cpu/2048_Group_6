@@ -1,9 +1,12 @@
 """Nhiệm vụ của Lính cát 1: Viết thuật toán Expectimax và Chance Node Sampling"""
 import numpy as np
 from game2048.types import Move
-from game2048.rules import move_board
-
+from game2048.rules import move_board, legal_moves, is_game_over
+from game2048.heuristic import monotonicity, smoothness, merge_potential, HeuristicWeights
+import random
+import math
 class ExpectimaxExpansion:
+    """Expectimax using recursive function-based"""
     def __init__(self, tile_spawn_chance: dict[int, float]={2: 0.9, 4: 0.1}, riskiness: float=1):
         self.tile_spawn_chance = tile_spawn_chance
         self.riskiness = riskiness
@@ -46,7 +49,7 @@ class ExpectimaxExpansion:
         tile_score = []
         tile_chance = []
         row, col = board.shape
-        overload_amount = 9
+        overload_amount = 11
         #Loop through all empty cells and calculate the value of each possible spawn
         #Consider only states with 2 as the possible spawn tile if there is more than 9 empty square to cut down computation cost
         if board[board==0].sum()>overload_amount:
@@ -92,18 +95,119 @@ class ExpectimaxExpansion:
 
         return (tile_score*tile_chance).sum()
 
+
 class MCTSNode:
-    def __init__(self, board: np.ndarray, parent=None, cause: Move=None, isBot: bool=True):
+    """I dont know how to optimize this. Dont use it"""
+    def __init__(self, board: np.ndarray, parent: MCTSNode=None, cause: Move=None, isBot: bool=True, cur_score: int=0):
         self.board = board
+        self.isBot = isBot
         self.parent = parent
         self.children = []
-        self.simulated_value = 0.0
+        self.overall_value = 0.0
+        self.cur_score = cur_score
         self.visits = 0
         self.cause = cause
-        self.untried_actions = [move for move in Move if move_board(board, move)[2]] if isBot else np.argwhere(board==0)
+        if isBot:
+            available_moves = list(legal_moves(board)) 
+            self.untried_actions = available_moves
+            if len(available_moves)==0: 
+                self.children = None
+        else:
+            empty = np.argwhere(board==0)
+            self.untried_actions = random.choices([list(tile)+[number] for tile in empty for number in [2,4]], [0.9]*len(empty)+[0.1]*len(empty), k=min(10, len(empty)*2))
 
     #Utility methods
-    def __is_terminal(self):
-        pass
+    def __unexpandable(self):
+        return self.untried_actions==[]
+
+    def __best_child(self):
+        least_visited = min(self.children, key=lambda x: x.visits)
+        if least_visited.visits == 0:
+            return least_visited
+
+        def ucb1(node: MCTSNode, c: float=1.4):
+            exploit = node.overall_value / node.visits
+            explore = math.sqrt(math.log(self.visits)/node.visits)
+            return exploit + c*explore
+        return max(self.children, key=ucb1)  
+        
+    #Expansion
+    def expand(self):
+        """
+        Expand from a leaf node
+
+        Return
+        ------
+
+        Node
+            The expanded child node of the leaf node
+        """
+        change = self.untried_actions.pop(0)
+        if self.isBot: 
+            new_state, score = move_board(self.board, change)[:2]
+            child = MCTSNode(new_state, self, change, False, self.cur_score+score)
+            self.children.append(child)
+        else: 
+            new_state = self.board.copy()
+            new_state[change[0]][change[1]] = change[2]
+            child = MCTSNode(new_state, self, change, True, self.cur_score)
+            self.children.append(child)
+        return child
+    
+    #Simulation
+    def simulate(self):
+        cur_state = self.board.copy()
+        total_score = self.cur_score
+        available_move = legal_moves(cur_state)
+        depth = 0
+        while available_move and depth<20:
+            move = random.choice(available_move)
+            cur_state, merge_score, changed = move_board(cur_state, move)
+            total_score+=merge_score
+            if not changed:
+                break
+            spawn = random.choice(np.argwhere(cur_state==0))
+            cur_state[spawn[0]][spawn[1]] = 2 if random.random() < 0.9 else 4
+            available_move = legal_moves(cur_state)
+            depth+=1
+        return total_score
+
+    #Backpropagation
+    def backpropagate(self, score):
+        self.visits += 1
+        self.overall_value += score
+        if self.parent:
+            self.parent.backpropagate(score)
+
+    #Creating tree
+    #Make your own shi if you need to implement other heuristic functions, this is just base iterating method
+    def search(self, iteration: int, evaluating: bool=True):
+        for i in range(iteration):
+            node = self
+            while (node.children is not None) and node.__unexpandable():
+                node = node.__best_child()
+            if (node.children is not None):
+                node = node.expand()
+            score = node.simulate()
+            node.backpropagate(score)
+        best_child = max(self.children, key= lambda x:x.visits)
+        return best_child.cause
+#Debug template
+#            try: 
+#                node.<method>
+#            except Exception as e:
+#                print("Iteration:", i)
+#                print("Metadata")
+#                print(f"Children: {node.children}\nBoard: \n{node.board}\nVisits: {node.visits}\nUnexplore: {self.untried_actions}")
+#                print(f"\x1b[91mFailed to <do methods>. Error msg:\x1b[0m", e)
+
+
+        
+
+    
+
+
+
+
 
     
