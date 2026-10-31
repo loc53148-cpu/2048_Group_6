@@ -1,213 +1,165 @@
-"""Nhiệm vụ của Lính cát 1: Viết thuật toán Expectimax và Chance Node Sampling"""
+"""Nhiệm vụ phối hợp của Lính cát 1 & 2: Viết thuật toán Expectimax, Quản lý thời gian và Cache"""
+import time 
 import numpy as np
+import random
+import math
 from game2048.types import Move
 from game2048.rules import move_board, legal_moves, is_game_over
 from game2048.heuristic import monotonicity, smoothness, merge_potential, HeuristicWeights
-import random
-import math
+
+# Import các hàm quản lý bộ nhớ đệm do Phương viết từ file tt_cache.py
+from student.tt_cache import lookup_cache, store_cache
+
 class ExpectimaxExpansion:
-    """Expectimax using recursive function-based"""
+    """Expectimax sử dụng giải thuật đệ quy tích hợp Quản lý thời gian & Cache"""
     def __init__(self, tile_spawn_chance: dict[int, float]={2: 0.9, 4: 0.1}, riskiness: float=1):
         self.tile_spawn_chance = tile_spawn_chance
         self.riskiness = riskiness
 
+    def maximizer(self, board: np.ndarray, cum_score: int=0, depth: int=0, start_time: float=0.0, time_limit_ms: float=60000.0, max_depth: int=4) -> float:
+        # BẢO VỆ KHẨN CẤP (Nhiệm vụ của Phương): Ngắt đệ quy ngay nếu sắp lố thời gian nước đi (chừa hao 1.5ms)
+        if (time.time() - start_time) * 1000 > (time_limit_ms - 1.5):
+            return float(cum_score)
 
-    def maximizer(self, board: np.ndarray, cum_score: int=0, depth: int=0) -> float:
-        if depth>=4:
-            return cum_score
+        # Điều kiện dừng thay đổi động theo độ sâu tối đa của vòng lặp Iterative Deepening
+        if depth >= max_depth:
+            return float(cum_score)
+            
         max_score = float("-inf")
         for move in Move:
             projected_board, merge_score, valid = move_board(board, move)
-            max_score =  max(
-                            max_score, 
-                            (self.expectedScore(projected_board, cum_score+merge_score, self.riskiness, depth+1) if valid else cum_score)
-                            )
+            
+            # Truyền thêm các tham số start_time, time_limit_ms, max_depth vào các tầng đệ quy kế tiếp
+            score = self.expectedScore(projected_board, cum_score+merge_score, self.riskiness, depth+1, start_time, time_limit_ms, max_depth) if valid else float(cum_score)
+            if score > max_score:
+                max_score = score
+                
         return max_score
-        
 
-    def expectedScore(self, board: np.ndarray, cum_score: int, riskiness: float, depth: int) -> float:
-        """
-        Calculated estimated value of current board, over all possible variants of current board *(Possible states after engine randomly spawns new tile)*
+    def expectedScore(self, board: np.ndarray, cum_score: int, riskiness: float, depth: int, start_time: float=0.0, time_limit_ms: float=60000.0, max_depth: int=4) -> float:
+        # BẢO VỆ KHẨN CẤP (Nhiệm vụ của Phương): Kiểm tra thời gian trong tầng Chance Node
+        if (time.time() - start_time) * 1000 > (time_limit_ms - 1.5):
+            return float(cum_score)
 
-        Parameters
-        ----------
-        board: numpy array
-            Current state of the game
-        cum_score: int
-            The simulated score of the current state of the game (Score from merging)
-        riskiness: float
-            Risky factor to reduce the weigh(spawn probability) used in calculating mean score of states with small scores.
-            Small scores are scores that have smaller than the initially calculated mean score before add in risk factor.
-        depth: int
-            Current depth of the recursion 
-
-        Return
-        ------
-        float
-            The final calculated mean score
-        """
         tile_score = []
         tile_chance = []
         row, col = board.shape
         overload_amount = 11
-        #Loop through all empty cells and calculate the value of each possible spawn
-        #Consider only states with 2 as the possible spawn tile if there is more than 9 empty square to cut down computation cost
-        if board[board==0].sum()>overload_amount:
+        
+        if board[board==0].sum() > overload_amount:
             for i in range(row):
                 for j in range(col):
                     value = board[i][j]
-                    if value>0:
+                    if value > 0:
                         continue
                     board[i][j] = 2
-                    tile_score.append(self.maximizer(board, cum_score, depth+1))
+                    tile_score.append(self.maximizer(board, cum_score, depth+1, start_time, time_limit_ms, max_depth))
                     tile_chance.append(1)
                     board[i][j] = 0
-        else: 
+        else:
             for i in range(row):
                 for j in range(col):
                     value = board[i][j]
-                    if value>0:
+                    if value > 0:
                         continue
                     for new_tile in self.tile_spawn_chance:
                         board[i][j] = new_tile
-                        tile_score.append(self.maximizer(board, cum_score, depth+1))
+                        tile_score.append(self.maximizer(board, cum_score, depth+1, start_time, time_limit_ms, max_depth))
                         tile_chance.append(self.tile_spawn_chance[new_tile])
-                    board[i][j] = 0
+                        board[i][j] = 0
+                        
+        if not tile_score:
+            return float(cum_score)
 
-        #Changing to numpy array for faster calculation
-        #Divide all values in title_chance by half the number of empty cells so that total probability add up to 1
         tile_score = np.array(tile_score)
-        tile_chance = np.array(tile_chance)/(len(tile_chance)/2) 
-
-        #Divide all scores less than pre-adjusted mean score by riskiness parameter
-        #Scale other scores up individually equal so that total probability add up to 1, 
-        #and the relative size between them doesnt change
-        initial_mean_score = (tile_score*tile_chance).sum()
-
+        tile_chance = np.array(tile_chance)/(len(tile_chance)/2)
+        
+        initial_mean_score = (tile_score * tile_chance).sum()
         small_score = tile_score <= initial_mean_score
-
-        #Change score according to riskiness parameter only if there are branches with score bigger than mean score
-        if sum(small_score)==len(tile_score):
+        
+        if sum(small_score) == len(tile_score):
             return initial_mean_score
+            
         tile_chance[small_score] /= riskiness
         total_small_score_chance = tile_chance[small_score].sum()
-        tile_chance[~small_score] *= (1-total_small_score_chance/riskiness)/(1-total_small_score_chance)
-
-        return (tile_score*tile_chance).sum()
-
-
-class MCTSNode:
-    """I dont know how to optimize this. Dont use it"""
-    def __init__(self, board: np.ndarray, parent: MCTSNode=None, cause: Move=None, isBot: bool=True, cur_score: int=0):
-        self.board = board
-        self.isBot = isBot
-        self.parent = parent
-        self.children = []
-        self.overall_value = 0.0
-        self.cur_score = cur_score
-        self.visits = 0
-        self.cause = cause
-        if isBot:
-            available_moves = list(legal_moves(board)) 
-            self.untried_actions = available_moves
-            if len(available_moves)==0: 
-                self.children = None
-        else:
-            empty = np.argwhere(board==0)
-            self.untried_actions = random.choices([list(tile)+[number] for tile in empty for number in [2,4]], [0.9]*len(empty)+[0.1]*len(empty), k=min(10, len(empty)*2))
-
-    #Utility methods
-    def __unexpandable(self):
-        return self.untried_actions==[]
-
-    def __best_child(self):
-        least_visited = min(self.children, key=lambda x: x.visits)
-        if least_visited.visits == 0:
-            return least_visited
-
-        def ucb1(node: MCTSNode, c: float=1.4):
-            exploit = node.overall_value / node.visits
-            explore = math.sqrt(math.log(self.visits)/node.visits)
-            return exploit + c*explore
-        return max(self.children, key=ucb1)  
+        tile_chance[~small_score] *= (1 - total_small_score_chance / riskiness) / (1 - total_small_score_chance)
         
-    #Expansion
-    def expand(self):
-        """
-        Expand from a leaf node
-
-        Return
-        ------
-
-        Node
-            The expanded child node of the leaf node
-        """
-        change = self.untried_actions.pop(0)
-        if self.isBot: 
-            new_state, score = move_board(self.board, change)[:2]
-            child = MCTSNode(new_state, self, change, False, self.cur_score+score)
-            self.children.append(child)
-        else: 
-            new_state = self.board.copy()
-            new_state[change[0]][change[1]] = change[2]
-            child = MCTSNode(new_state, self, change, True, self.cur_score)
-            self.children.append(child)
-        return child
-    
-    #Simulation
-    def simulate(self):
-        cur_state = self.board.copy()
-        total_score = self.cur_score
-        available_move = legal_moves(cur_state)
-        depth = 0
-        while available_move and depth<20:
-            move = random.choice(available_move)
-            cur_state, merge_score, changed = move_board(cur_state, move)
-            total_score+=merge_score
-            if not changed:
-                break
-            spawn = random.choice(np.argwhere(cur_state==0))
-            cur_state[spawn[0]][spawn[1]] = 2 if random.random() < 0.9 else 4
-            available_move = legal_moves(cur_state)
-            depth+=1
-        return total_score
-
-    #Backpropagation
-    def backpropagate(self, score):
-        self.visits += 1
-        self.overall_value += score
-        if self.parent:
-            self.parent.backpropagate(score)
-
-    #Creating tree
-    #Make your own shi if you need to implement other heuristic functions, this is just base iterating method
-    def search(self, iteration: int, evaluating: bool=True):
-        for i in range(iteration):
-            node = self
-            while (node.children is not None) and node.__unexpandable():
-                node = node.__best_child()
-            if (node.children is not None):
-                node = node.expand()
-            score = node.simulate()
-            node.backpropagate(score)
-        best_child = max(self.children, key= lambda x:x.visits)
-        return best_child.cause
-#Debug template
-#            try: 
-#                node.<method>
-#            except Exception as e:
-#                print("Iteration:", i)
-#                print("Metadata")
-#                print(f"Children: {node.children}\nBoard: \n{node.board}\nVisits: {node.visits}\nUnexplore: {self.untried_actions}")
-#                print(f"\x1b[91mFailed to <do methods>. Error msg:\x1b[0m", e)
+        return float((tile_score * tile_chance).sum())
 
 
+# =====================================================================
+# 🚀 PHẦN CODE CHÍNH CỦA PHƯƠNG: ĐIỀU PHỐI THỜI GIAN, SÂU DẦN & CACHE
+# =====================================================================
+def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_budget_ms: float) -> Move:
+    """
+    Hàm giao tiếp chính nhận dữ liệu từ agent.py để tìm nước đi tối ưu nhất.
+    Tích hợp chiến lược Phân bổ thời gian (Ô màu vàng), Iterative Deepening và Cache.
+    """
+    if not legal_moves:
+        return Move.UP
         
-
+    start_time = time.time()
+    best_move = legal_moves[0]  # Nước đi dự phòng khẩn cấp nếu hết giờ ngay lập tức
     
+    # 1. CHIẾN LƯỢC PHÂN BỔ QUỸ THỜI GIAN (Chiến lược "Ô màu vàng")
+    empty_count = np.count_nonzero(board == 0)
+    if empty_count > 10:
+        # Bàn cờ thoáng (>10 ô trống): Đi cực nhanh trong tối đa 15ms, giới hạn độ sâu nông
+        effective_time_limit_ms = min(15.0, time_budget_ms)
+        max_depth_limit = 3
+    else:
+        # Bàn cờ bí: Bung toàn bộ thời gian hệ thống cho phép để tính toán rất sâu
+        effective_time_limit_ms = time_budget_ms
+        max_depth_limit = 12
 
+    # Khởi tạo đối tượng cây của Minh để bắt đầu tìm kiếm
+    ai_engine = ExpectimaxExpansion()
 
+    # 2. VÒNG LẶP SÂU DẦN (Iterative Deepening từ depth = 1 -> max_depth_limit)
+    for current_max_depth in range(1, max_depth_limit + 1):
+        # Kiểm tra thời gian trước khi tăng thêm một tầng độ sâu mới
+        elapsed_ms = (time.time() - start_time) * 1000
+        if elapsed_ms > (effective_time_limit_ms - 2.0):  # Chừa hao 2ms an toàn để kịp quay đầu
+            break
 
+        # 3. TỐI ƯU SẮP XẾP NƯỚC ĐI BẰNG CACHE (Move Ordering)
+        # Tra cứu xem thế cờ này từng tính chưa để ưu tiên duyệt hướng đi tốt nhất cũ lên đầu
+        ordered_moves = legal_moves.copy()
+        cached_res = lookup_cache(board)
+        if cached_res:
+            cached_depth, cached_score, cached_move = cached_res
+            if cached_move in ordered_moves:
+                ordered_moves.remove(cached_move)
+                ordered_moves.insert(0, cached_move)
 
+        current_depth_best_move = None
+        max_score = -float('inf')
 
-    
+        # 4. DUYỆT TÌM NƯỚC ĐI TỐT NHẤT TRONG TẦNG ĐỘ SÂU HIỆN TẠI
+        for move in ordered_moves:
+            projected_board, merge_score, valid = move_board(board, move)
+            if not valid:
+                continue
+                
+            # Gọi tầng đệ quy tính toán của Minh, truyền kèm các tham số đo thời gian thực tế
+            score = ai_engine.expectedScore(
+                projected_board, 
+                cum_score=merge_score, 
+                riskiness=ai_engine.riskiness, 
+                depth=1, 
+                start_time=start_time, 
+                time_limit_ms=effective_time_limit_ms,
+                max_depth=current_max_depth
+            )
+            
+            if score > max_score:
+                max_score = score
+                current_depth_best_move = move
+
+        # 5. CHỐT KẾT QUẢ TẦNG: Chỉ lưu vào cache và ghi nhận nước đi nếu tính trọn vẹn tầng và kịp giờ
+        current_elapsed_ms = (time.time() - start_time) * 1000
+        if current_depth_best_move is not None and current_elapsed_ms < effective_time_limit_ms:
+            best_move = current_depth_best_move
+            store_cache(board, current_max_depth, max_score, best_move)
+
+    return best_move
