@@ -3,9 +3,7 @@
 Baseline bên dưới nhìn trước đúng một nước. Nó minh họa API và cách mô phỏng
 nước đi, nhưng cố ý chưa xử lý ô ngẫu nhiên và chưa phải một thuật toán mạnh.
 """
-
 from __future__ import annotations
-
 import numpy as np
 import random
 import math
@@ -13,44 +11,47 @@ import math
 from game2048.observation import Observation
 from game2048.rules import move_board
 from game2048.types import Move
-from student.search import ExpectimaxExpansion, MCTSNode
+
+# 1. Kéo vũ khí hạng nặng của team vào đây
+from student.search import get_best_move_expectimax
+from student.tt_cache import clear_cache
 
 class Agent:
-    # Đổi tên này thành tên đội; nó sẽ xuất hiện trong UI và file kết quả.
-    name = "starter-one-ply"
+    # 2. Đổi tên team cho ngầu, hiển thị trên UI
+    name = "Group_6_Destroyer" 
 
     def reset(self, seed: int | None = None) -> None:
-        """Xóa cache/trạng thái giữa hai ván nếu thuật toán của bạn có dùng."""
-
-    def evaluate(self, board: np.ndarray, merge_score: int) -> float:
-        """Heuristic mẫu; hãy thay bằng thiết kế của nhóm."""
-        #empty_cells = int(np.count_nonzero(board == 0))
-        #largest_tile = int(board.max())
-        #return 250.0 * empty_cells + merge_score + 0.1 * largest_tile
-
-        #Simple Expectimax with risk factor
-        root = ExpectimaxExpansion()
-        return root.maximizer(board, merge_score)
-
-        #MCTS method
-        #root = MCTSNode(board, cur_score=merge_score)
+        """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
+        clear_cache()
+        # Gọi hàm tạo lại ma trận băm ngẫu nhiên của Phương (nếu Phương đã sửa theo yêu cầu)
+        try:
+            init_zobrist() 
+        except NameError:
+            pass # Phòng hờ Phương chưa kịp viết hàm này thì game vẫn chạy được
 
     def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
-        """Trả về đúng một phần tử ``Move`` có trong ``obs.legal_moves``.
-
-        Khi chấm theo tổng thời gian, ``time_limit_ms`` và
-        ``obs.time_remaining_ms`` là ngân sách còn lại của cả ván — không phải
-        lời hứa rằng mỗi nước được phép dùng hết số đó.
-        """
+        """Trả về đúng một phần tử Move có trong obs.legal_moves."""
+        
         if not obs.legal_moves:
             raise ValueError("choose_move được gọi ở trạng thái kết thúc")
-        best_move = obs.legal_moves[0]
-        best_value = float("-inf")
-        for move in obs.legal_moves:
-            next_board, merge_score, _changed = move_board(obs.board, move)
-            value = self.evaluate(next_board, merge_score)
-            if value > best_value:
-                best_value, best_move = value, move
+
+        # 3. NHIỆM VỤ CỦA TEAM LEAD: CHIA NGÂN SÁCH THỜI GIAN
+        # time_limit_ms là TỔNG thời gian còn lại của CẢ VÁN (ví dụ 60.000ms).
+        # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
+        # Ở đây tôi ví dụ cấp cho mỗi nước đi tối đa 1/100 quỹ thời gian còn lại, hoặc cố định 1 mức an toàn.
+        
+        # Cấp khoảng 200ms cho 1 nước đi (Tùy ông căn chỉnh sau này bằng auto_tuner)
+        time_budget_ms = min(200.0, time_limit_ms / 50.0) 
+        
+        # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn
+        if time_limit_ms < 1000:
+            time_budget_ms = 15.0
+
+        # 4. Truyền bàn cờ, các nước đi hợp lệ và ngân sách thời gian xuống cho Phương & Minh lo
+        best_move = get_best_move_expectimax(
+            board=obs.board, 
+            legal_moves=obs.legal_moves, 
+            time_budget_ms=time_budget_ms
+        )
+
         return best_move
-        #root = MCTSNode(obs.board, cur_score=obs.score)
-        #return root.search(150)
