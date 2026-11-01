@@ -37,8 +37,6 @@ class Agent:
 
         # 3. NHIỆM VỤ CỦA TEAM LEAD: CHIA NGÂN SÁCH THỜI GIAN
         # time_limit_ms là TỔNG thời gian còn lại của CẢ VÁN (ví dụ 60.000ms).
-        # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
-        # Ở đây tôi ví dụ cấp cho mỗi nước đi tối đa 1/100 quỹ thời gian còn lại, hoặc cố định 1 mức an toàn.
         
         # Cấp khoảng 200ms cho 1 nước đi (Tùy ông căn chỉnh sau này bằng auto_tuner)
         time_budget_ms = min(200.0, time_limit_ms / 50.0) 
