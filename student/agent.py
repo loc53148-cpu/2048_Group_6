@@ -18,7 +18,7 @@ from student.tt_cache import clear_cache
 
 class Agent:
     # 2. Đổi tên team cho ngầu, hiển thị trên UI
-    name = "Group_6_Destroyer" 
+    name = "Group_6" 
 
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
@@ -40,7 +40,7 @@ class Agent:
         # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
         # Ở đây tôi ví dụ cấp cho mỗi nước đi tối đa 1/100 quỹ thời gian còn lại, hoặc cố định 1 mức an toàn.
         
-        # Cấp khoảng 200ms cho 1 nước đi (Tùy ông căn chỉnh sau này bằng auto_tuner)
+        # Cấp khoảng 80ms cho 1 nước đi (Tùy căn chỉnh sau này bằng auto_tuner)
         time_budget_ms = min(80.0, time_limit_ms / 50.0) 
         
         # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn
