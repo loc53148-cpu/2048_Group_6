@@ -37,13 +37,15 @@ class Agent:
 
         # 3. NHIỆM VỤ CỦA TEAM LEAD: CHIA NGÂN SÁCH THỜI GIAN
         # time_limit_ms là TỔNG thời gian còn lại của CẢ VÁN (ví dụ 60.000ms).
+        # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
+        # Ở đây tôi ví dụ cấp cho mỗi nước đi tối đa 1/100 quỹ thời gian còn lại, hoặc cố định 1 mức an toàn.
         
         # Cấp khoảng 200ms cho 1 nước đi (Tùy ông căn chỉnh sau này bằng auto_tuner)
-        time_budget_ms = min(200.0, time_limit_ms / 50.0) 
+        time_budget_ms = min(80.0, time_limit_ms / 50.0) 
         
         # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn
         if time_limit_ms < 1000:
-            time_budget_ms = 15.0
+            time_budget_ms = 10.0
 
         # 4. Truyền bàn cờ, các nước đi hợp lệ và ngân sách thời gian xuống cho Phương & Minh lo
         best_move = get_best_move_expectimax(
