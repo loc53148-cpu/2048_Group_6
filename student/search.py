@@ -124,7 +124,7 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
 
         # 3. TỐI ƯU SẮP XẾP NƯỚC ĐI BẰNG CACHE (Move Ordering)
         # Tra cứu xem thế cờ này từng tính chưa để ưu tiên duyệt hướng đi tốt nhất cũ lên đầu
-        ordered_moves = legal_moves.copy()
+        ordered_moves = list(legal_moves)
         cached_res = lookup_cache(board)
         if cached_res:
             cached_depth, cached_score, cached_move = cached_res
