@@ -23,11 +23,10 @@ class Agent:
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
         clear_cache()
-        # Gọi hàm tạo lại ma trận băm ngẫu nhiên của Phương (nếu Phương đã sửa theo yêu cầu)
         try:
             init_zobrist() 
         except NameError:
-            pass # Phòng hờ Phương chưa kịp viết hàm này thì game vẫn chạy được
+            pass 
 
     def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
         """Trả về đúng một phần tử Move có trong obs.legal_moves."""
@@ -35,18 +34,17 @@ class Agent:
         if not obs.legal_moves:
             raise ValueError("choose_move được gọi ở trạng thái kết thúc")
 
-        # 3. NHIỆM VỤ CỦA TEAM LEAD: CHIA NGÂN SÁCH THỜI GIAN
-        # time_limit_ms là TỔNG thời gian còn lại của CẢ VÁN (ví dụ 60.000ms).
-        # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
-        
-        # Cấp khoảng 80ms cho 1 nước đi (Tùy căn chỉnh sau này bằng auto_tuner)
-        time_budget_ms = min(80.0, time_limit_ms / 50.0) 
-        
-        # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn
-        if time_limit_ms < 1000:
-            time_budget_ms = 10.0
+        # 3. NHIỆM VỤ CỦA TEAM LEAD: BUNG HẾT SỨC MẠNH
+        if time_limit_ms > 45000.0:
+            # Giai đoạn đầu: Đánh cực nhanh (15ms) để cất quỹ thời gian
+            time_budget_ms = 15.0
+        elif time_limit_ms > 5000.0:
+            # Giai đoạn giữa (Sống còn): Bung ngân sách ra nghĩ thật sâu (400ms)
+            time_budget_ms = min(400.0, time_limit_ms / 30.0)
+        else:
+            # Gần hết giờ: Trở về chế độ sinh tồn
+            time_budget_ms = 15.0
 
-        # 4. Truyền bàn cờ, các nước đi hợp lệ và ngân sách thời gian xuống cho Phương & Minh lo
         best_move = get_best_move_expectimax(
             board=obs.board, 
             legal_moves=obs.legal_moves, 
