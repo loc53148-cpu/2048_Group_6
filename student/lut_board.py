@@ -1,12 +1,13 @@
 """
-Module Bảng Tra Cứu (Lookup Table - LUT) tốc độ cao cho bàn cờ 2048.
-Nhiệm vụ của Long: Thay thế hàm move_board Python thuần bằng tra cứu O(1).
+Module Bảng Tra Cứu (Lookup Table - LUT) siêu tốc cho bàn cờ 2048.
+Nhiệm vụ của Long: Tối ưu hóa tối đa, loại bỏ hoàn toàn các overhead tạo mảng trung gian.
 
 Kỹ thuật:
-- Mã hóa mỗi hàng 4 ô thành số nguyên 16-bit (4 nibble, mỗi nibble = số mũ log2 của ô)
-- Tính toán sẵn kết quả gộp cho TẤT CẢ 65536 hoán vị của 1 hàng
-- Lưu vào 4 bảng: LEFT/RIGHT/UP/DOWN (hỗ trợ tra cứu trực tiếp theo chiều)
-- Độ phức tạp: O(1) thay vì duyệt vòng lặp Python thuần
+- Tính toán sẵn bảng tra cứu cho tất cả các hoán vị của 1 hàng (từ [0,0,0,0] đến 65536)
+- Lưu trữ dưới dạng Tuple Hash Table trực tiếp: O(1) C-speed lookup
+- Kiểm tra tính hợp lệ (valid/changed) bằng phép so sánh Tuple cực nhanh
+- Nếu nước đi không hợp lệ: Trả về False ngay lập tức, KHÔNG sinh mảng mới
+- Xử lý UP/DOWN trực tiếp qua cột mà không cần Transpose (.T) hay Fliplr
 """
 from __future__ import annotations
 
@@ -14,138 +15,144 @@ import numpy as np
 from game2048.types import Move
 
 
-# ─── KHỞI TẠO BẢNG LUT ─────────────────────────────────────────────────────
-
-def _encode_row(row) -> int:
-    """Mã hóa 1 hàng [a, b, c, d] thành số nguyên 16-bit (4 nibble = số mũ log2)."""
-    encoded = 0
-    for i, val in enumerate(row):
-        if val > 0:
-            exp = int(val).bit_length() - 1  # log2 tương đương
-            if exp > 15:
-                exp = 15
-            encoded |= (exp << (i * 4))
-    return encoded
-
-
-def _decode_row(encoded: int) -> np.ndarray:
-    """Giải mã số nguyên 16-bit thành hàng [a, b, c, d]."""
-    row = np.zeros(4, dtype=np.uint32)
-    for i in range(4):
-        exp = (encoded >> (i * 4)) & 0xF
-        if exp > 0:
-            row[i] = 1 << exp
-    return row
-
-
-def _merge_left(row: np.ndarray) -> tuple[np.ndarray, int]:
-    """Gộp hàng về bên Trái, trả về (hàng mới, điểm thưởng)."""
-    values = [int(v) for v in row if v > 0]
-    merged = []
+def _merge_tuple_left(row: tuple[int, int, int, int]) -> tuple[tuple[int, int, int, int], int]:
+    """Hàm gộp 1 hàng 4 phần tử về bên trái, trả về (hàng_mới, điểm_thưởng)."""
+    vals = [v for v in row if v != 0]
+    res = []
     reward = 0
     i = 0
-    while i < len(values):
-        if i + 1 < len(values) and values[i] == values[i + 1]:
-            val = values[i] * 2
-            merged.append(val)
+    while i < len(vals):
+        if i + 1 < len(vals) and vals[i] == vals[i + 1]:
+            val = vals[i] * 2
+            res.append(val)
             reward += val
             i += 2
         else:
-            merged.append(values[i])
+            res.append(vals[i])
             i += 1
-    merged.extend([0] * (4 - len(merged)))
-    return np.asarray(merged, dtype=np.uint32), reward
+    while len(res) < 4:
+        res.append(0)
+    return (res[0], res[1], res[2], res[3]), reward
 
 
 def _build_lut():
-    """Xây dựng toàn bộ 4 bảng LUT cho 65536 hoán vị hàng."""
-    # Bảng di chuyển: lưu hàng kết quả đã mã hóa
-    lut_left  = np.zeros(65536, dtype=np.uint16)
-    lut_right = np.zeros(65536, dtype=np.uint16)
-    # Bảng điểm thưởng
-    lut_left_reward  = np.zeros(65536, dtype=np.uint32)
-    lut_right_reward = np.zeros(65536, dtype=np.uint32)
+    """Khởi tạo trước toàn bộ bảng tra cứu cho mọi giá trị ngói có thể xuất hiện."""
+    tiles = [0] + [1 << i for i in range(1, 17)]  # 0, 2, 4, ..., 65536
+    lut_left = {}
+    lut_right = {}
+    for a in tiles:
+        for b in tiles:
+            for c in tiles:
+                for d in tiles:
+                    row = (a, b, c, d)
+                    # Di chuyển Trái
+                    m_left, rew_left = _merge_tuple_left(row)
+                    lut_left[row] = (m_left, rew_left)
 
-    for enc in range(65536):
-        row = _decode_row(enc)
-
-        # Di chuyển Trái
-        moved_left, reward_left = _merge_left(row)
-        lut_left[enc] = _encode_row(moved_left)
-        lut_left_reward[enc] = reward_left
-
-        # Di chuyển Phải = lật hàng → trái → lật lại
-        row_flipped = row[::-1]
-        moved_right_flipped, reward_right = _merge_left(row_flipped)
-        moved_right = moved_right_flipped[::-1]
-        lut_right[enc] = _encode_row(moved_right)
-        lut_right_reward[enc] = reward_right
-
-    return lut_left, lut_right, lut_left_reward, lut_right_reward
+                    # Di chuyển Phải = lật ngược -> gộp trái -> lật lại
+                    row_rev = (d, c, b, a)
+                    m_rev, rew_right = _merge_tuple_left(row_rev)
+                    m_right = (m_rev[3], m_rev[2], m_rev[1], m_rev[0])
+                    lut_right[row] = (m_right, rew_right)
+    return lut_left, lut_right
 
 
-# Khởi tạo LUT một lần duy nhất khi module được import
-_LUT_LEFT, _LUT_RIGHT, _LUT_LEFT_REWARD, _LUT_RIGHT_REWARD = _build_lut()
+# Khởi tạo bảng một lần duy nhất khi import module
+_LUT_LEFT, _LUT_RIGHT = _build_lut()
 
-
-# ─── HÀM ENCODE/DECODE BÀNG CỜ ──────────────────────────────────────────────
-
-def encode_board(board: np.ndarray) -> list[int]:
-    """Mã hóa bàn cờ 4x4 thành danh sách 4 số nguyên 16-bit (mỗi phần tử = 1 hàng)."""
-    encoded = []
-    for row in board:
-        encoded.append(_encode_row(row))
-    return encoded
-
-
-def decode_board(encoded_rows: list[int]) -> np.ndarray:
-    """Giải mã danh sách 4 hàng mã hóa thành bàn cờ numpy 4x4."""
-    rows = [_decode_row(enc) for enc in encoded_rows]
-    return np.stack(rows).astype(np.uint32)
-
-
-# ─── HÀM DI CHUYỂN NHANH ────────────────────────────────────────────────────
 
 def fast_move_board(board: np.ndarray, move: Move) -> tuple[np.ndarray, int, bool]:
     """
-    Phiên bản tốc độ cao của move_board sử dụng LUT tra cứu O(1).
-    Thay thế hoàn toàn hàm move_board gốc trong vòng lặp Expectimax.
-    
+    Di chuyển bàn cờ bằng LUT O(1), tốc độ vượt trội so với move_board gốc.
     Returns: (new_board, reward, changed)
     """
-    if move == Move.LEFT:
-        enc_rows = [_encode_row(board[r]) for r in range(4)]
-        new_enc = [_LUT_LEFT[e] for e in enc_rows]
-        reward = sum(_LUT_LEFT_REWARD[e] for e in enc_rows)
-        new_board = decode_board(new_enc)
+    b = board
+    try:
+        if move == Move.LEFT:
+            r0 = (int(b[0, 0]), int(b[0, 1]), int(b[0, 2]), int(b[0, 3]))
+            r1 = (int(b[1, 0]), int(b[1, 1]), int(b[1, 2]), int(b[1, 3]))
+            r2 = (int(b[2, 0]), int(b[2, 1]), int(b[2, 2]), int(b[2, 3]))
+            r3 = (int(b[3, 0]), int(b[3, 1]), int(b[3, 2]), int(b[3, 3]))
 
-    elif move == Move.RIGHT:
-        enc_rows = [_encode_row(board[r]) for r in range(4)]
-        new_enc = [_LUT_RIGHT[e] for e in enc_rows]
-        reward = sum(_LUT_RIGHT_REWARD[e] for e in enc_rows)
-        new_board = decode_board(new_enc)
+            m0, rew0 = _LUT_LEFT[r0]
+            m1, rew1 = _LUT_LEFT[r1]
+            m2, rew2 = _LUT_LEFT[r2]
+            m3, rew3 = _LUT_LEFT[r3]
 
-    elif move == Move.UP:
-        # Transpose → xử lý theo hàng → transpose lại
-        t = board.T
-        enc_rows = [_encode_row(t[r]) for r in range(4)]
-        new_enc = [_LUT_LEFT[e] for e in enc_rows]
-        reward = sum(_LUT_LEFT_REWARD[e] for e in enc_rows)
-        new_board = decode_board(new_enc).T
+            if m0 == r0 and m1 == r1 and m2 == r2 and m3 == r3:
+                return board, 0, False
 
-    else:  # Move.DOWN
-        # Transpose + flip → xử lý theo hàng → flip + transpose lại
-        t = board.T
-        enc_rows = [_encode_row(t[r]) for r in range(4)]
-        new_enc = [_LUT_RIGHT[e] for e in enc_rows]
-        reward = sum(_LUT_RIGHT_REWARD[e] for e in enc_rows)
-        new_board = decode_board(new_enc).T
+            new_board = np.array([m0, m1, m2, m3], dtype=np.uint32)
+            return new_board, rew0 + rew1 + rew2 + rew3, True
 
-    changed = not np.array_equal(new_board, board)
-    return new_board, int(reward), changed
+        elif move == Move.RIGHT:
+            r0 = (int(b[0, 0]), int(b[0, 1]), int(b[0, 2]), int(b[0, 3]))
+            r1 = (int(b[1, 0]), int(b[1, 1]), int(b[1, 2]), int(b[1, 3]))
+            r2 = (int(b[2, 0]), int(b[2, 1]), int(b[2, 2]), int(b[2, 3]))
+            r3 = (int(b[3, 0]), int(b[3, 1]), int(b[3, 2]), int(b[3, 3]))
+
+            m0, rew0 = _LUT_RIGHT[r0]
+            m1, rew1 = _LUT_RIGHT[r1]
+            m2, rew2 = _LUT_RIGHT[r2]
+            m3, rew3 = _LUT_RIGHT[r3]
+
+            if m0 == r0 and m1 == r1 and m2 == r2 and m3 == r3:
+                return board, 0, False
+
+            new_board = np.array([m0, m1, m2, m3], dtype=np.uint32)
+            return new_board, rew0 + rew1 + rew2 + rew3, True
+
+        elif move == Move.UP:
+            c0 = (int(b[0, 0]), int(b[1, 0]), int(b[2, 0]), int(b[3, 0]))
+            c1 = (int(b[0, 1]), int(b[1, 1]), int(b[2, 1]), int(b[3, 1]))
+            c2 = (int(b[0, 2]), int(b[1, 2]), int(b[2, 2]), int(b[3, 2]))
+            c3 = (int(b[0, 3]), int(b[1, 3]), int(b[2, 3]), int(b[3, 3]))
+
+            m0, rew0 = _LUT_LEFT[c0]
+            m1, rew1 = _LUT_LEFT[c1]
+            m2, rew2 = _LUT_LEFT[c2]
+            m3, rew3 = _LUT_LEFT[c3]
+
+            if m0 == c0 and m1 == c1 and m2 == c2 and m3 == c3:
+                return board, 0, False
+
+            new_board = np.array([
+                [m0[0], m1[0], m2[0], m3[0]],
+                [m0[1], m1[1], m2[1], m3[1]],
+                [m0[2], m1[2], m2[2], m3[2]],
+                [m0[3], m1[3], m2[3], m3[3]],
+            ], dtype=np.uint32)
+            return new_board, rew0 + rew1 + rew2 + rew3, True
+
+        else:  # Move.DOWN
+            c0 = (int(b[0, 0]), int(b[1, 0]), int(b[2, 0]), int(b[3, 0]))
+            c1 = (int(b[0, 1]), int(b[1, 1]), int(b[2, 1]), int(b[3, 1]))
+            c2 = (int(b[0, 2]), int(b[1, 2]), int(b[2, 2]), int(b[3, 2]))
+            c3 = (int(b[0, 3]), int(b[1, 3]), int(b[2, 3]), int(b[3, 3]))
+
+            m0, rew0 = _LUT_RIGHT[c0]
+            m1, rew1 = _LUT_RIGHT[c1]
+            m2, rew2 = _LUT_RIGHT[c2]
+            m3, rew3 = _LUT_RIGHT[c3]
+
+            if m0 == c0 and m1 == c1 and m2 == c2 and m3 == c3:
+                return board, 0, False
+
+            new_board = np.array([
+                [m0[0], m1[0], m2[0], m3[0]],
+                [m0[1], m1[1], m2[1], m3[1]],
+                [m0[2], m1[2], m2[2], m3[2]],
+                [m0[3], m1[3], m2[3], m3[3]],
+            ], dtype=np.uint32)
+            return new_board, rew0 + rew1 + rew2 + rew3, True
+
+    except KeyError:
+        # Cơ chế an toàn phòng hờ ngói siêu lớn (> 65536)
+        from game2048.rules import move_board
+        return move_board(board, move)
 
 
 def fast_legal_moves(board: np.ndarray) -> list[Move]:
-    """Trả về danh sách nước đi hợp lệ, sử dụng fast_move_board."""
+    """Trả về danh sách nước đi hợp lệ nhanh chóng."""
     return [move for move in [Move.LEFT, Move.RIGHT, Move.UP, Move.DOWN]
             if fast_move_board(board, move)[2]]
