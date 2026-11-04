@@ -20,9 +20,16 @@ class Agent:
     # 2. Đổi tên team cho ngầu, hiển thị trên UI
     name = "Group_6" 
 
+    def __init__(self):
+        # Các biến trạng thái được benchmark.py đọc để báo cáo số liệu thực tế
+        self.last_completed_depth: int = 0  # Độ sâu tìm kiếm thực tế đã hoàn thành
+        self.last_nodes: int = 0            # Số node đã duyệt (tùy chọn)
+
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
         clear_cache()
+        self.last_completed_depth = 0
+        self.last_nodes = 0
         # Gọi hàm tạo lại ma trận băm ngẫu nhiên của Phương (nếu Phương đã sửa theo yêu cầu)
         try:
             init_zobrist() 
@@ -46,11 +53,12 @@ class Agent:
         if time_limit_ms < 1000:
             time_budget_ms = 10.0
 
-        # 4. Truyền bàn cờ, các nước đi hợp lệ và ngân sách thời gian xuống cho Phương & Minh lo
+        # 4. Truyền bàn cờ, các nước đi hợp lệ, ngân sách thời gian và agent_instance xuống
         best_move = get_best_move_expectimax(
             board=obs.board, 
             legal_moves=obs.legal_moves, 
-            time_budget_ms=time_budget_ms
+            time_budget_ms=time_budget_ms,
+            agent_instance=self
         )
 
         return best_move
