@@ -7,15 +7,13 @@ import random
 import numpy as np
 import math
 from game2048.types import Move
-from game2048.rules import legal_moves, is_game_over
+from game2048.rules import move_board, legal_moves, is_game_over
 from game2048.heuristic import monotonicity, smoothness, merge_potential, HeuristicWeights
 
 # ĐỒNG BỘ LINH CÁT 2: Quản lý bộ nhớ đệm do Phương viết từ file tt_cache.py
 from student.tt_cache import lookup_cache, store_cache
 # ĐỒNG BỘ LINH CÁT 3: Hàm đánh giá thế cờ dồn góc từ file heuristic.py
 from student.heuristic import evaluate_board
-# GIAI ĐOẠN 2: Module LUT tốc độ cao - thay thế move_board Python thuần
-from student.lut_board import fast_move_board, fast_legal_moves
 
 class ExpectimaxExpansion:
     """Expectimax sử dụng giải thuật đệ quy tích hợp Quản lý thời gian & Cache"""
@@ -33,9 +31,9 @@ class ExpectimaxExpansion:
             return cum_score + evaluate_board(board)
 
         max_score = float("-inf")
-        # Duyệt qua các hướng đi hợp lệ — dùng fast_move_board (LUT) thay vì move_board Python thuần
+        # Duyệt qua các hướng đi hợp lệ
         for move in [Move.LEFT, Move.RIGHT, Move.UP, Move.DOWN]:
-            projected_board, merge_score, valid = fast_move_board(board, move)
+            projected_board, merge_score, valid = move_board(board, move)
             if not valid:
                 continue
             
@@ -111,16 +109,13 @@ class ExpectimaxExpansion:
         return float((tile_score * tile_chance).sum())
 
 
-def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_budget_ms: float, agent_instance=None) -> Move:
+def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_budget_ms: float) -> Move:
     """Hàm giao tiếp chính nhận dữ liệu từ agent.py để tìm nước đi tối ưu nhất."""
     if not legal_moves:
         return Move.UP
 
     start_time = time.time()
-    best_move = legal_moves[0] if legal_moves else Move.UP
-
-    # Độ sâu thực tế đạt được - sẽ được truyền ra ngoài qua agent_instance
-    reached_depth = 0
+    best_move = legal_moves if legal_moves else Move.UP
 
     empty_count = np.count_nonzero(board == 0)
 
@@ -164,9 +159,8 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
         max_score = float('-inf')
 
         # DUYỆT TÌM NƯỚC ĐI TỐT NHẤT TRONG TẦNG ĐỘ SÂU HIỆN TẠI
-        # Dùng fast_move_board (LUT O(1)) thay thế move_board Python thuần
         for move in ordered_moves:
-            projected_board, merge_score, valid = fast_move_board(board, move)
+            projected_board, merge_score, valid = move_board(board, move)
             if not valid:
                 continue
 
@@ -184,15 +178,10 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
                 max_score = score
                 current_depth_best_move = move
 
-        # CHỐT KẾT QUẢ TẦNG: Chỉ cập nhật best_move khi tầng hiện tại hoàn thành đúng hạn
+        # CHỐT KẾT QUẢ TẦNG: Lưu lại vào cache để tối ưu hóa sắp xếp cho các lượt đi tiếp theo
         current_elapsed_ms = (time.time() - start_time) * 1000
         if current_depth_best_move is not None and current_elapsed_ms < effective_time_limit_ms:
             best_move = current_depth_best_move
-            reached_depth = current_max_depth  # Ghi lại độ sâu đã chốt thực tế
             store_cache(board, current_max_depth, max_score, best_move)
-
-    # GIAI ĐOẠN 1: Truyền độ sâu thực tế ra ngoài để benchmark đọc được
-    if agent_instance is not None:
-        agent_instance.last_completed_depth = reached_depth
 
     return best_move
