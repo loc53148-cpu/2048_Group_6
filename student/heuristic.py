@@ -12,13 +12,15 @@ class HeuristicWeights:
     snake: float = 1.0
     corner_penalty: float = 10000.0
 
+_DEFAULT_SNAKE_MATRIX = np.array([
+    [32768, 16384, 8192, 4096],
+    [256,   512,   1024, 2048],
+    [128,   64,    32,   16],
+    [1,     2,     4,    8]
+], dtype=np.float64)
+
 def get_snake_matrix() -> np.ndarray:
-    return np.array([
-        [32768, 16384, 8192, 4096],
-        [256,   512,   1024, 2048],
-        [128,   64,    32,   16],
-        [1,     2,     4,    8]
-    ], dtype=np.float64)
+    return _DEFAULT_SNAKE_MATRIX
 
 def count_empty_cells(board: np.ndarray) -> int:
     return int(np.count_nonzero(board == 0))
