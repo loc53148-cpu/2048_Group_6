@@ -21,14 +21,16 @@ class Agent:
     name = "Group_6" 
 
     def __init__(self):
-        # Các biến trạng thái được benchmark.py đọc để báo cáo số liệu thực tế
-        self.last_completed_depth: int = 0  # Độ sâu tìm kiếm thực tế đã hoàn thành
+        # Các biến trạng thái được benchmark.py và kehoach.md đọc để báo cáo số liệu thực tế
+        self.last_completed_depth: int = 0  # Benchmark đọc trường này
+        self.search_depth: int = 0          # Kế hoạch kehoach.md yêu cầu trường này
         self.last_nodes: int = 0            # Số node đã duyệt (tùy chọn)
 
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
         clear_cache()
         self.last_completed_depth = 0
+        self.search_depth = 0
         self.last_nodes = 0
         # Gọi hàm tạo lại ma trận băm ngẫu nhiên của Phương (nếu Phương đã sửa theo yêu cầu)
         try:
@@ -42,16 +44,23 @@ class Agent:
         if not obs.legal_moves:
             raise ValueError("choose_move được gọi ở trạng thái kết thúc")
 
-        # 3. NHIỆM VỤ CỦA TEAM LEAD: CHIA NGÂN SÁCH THỜI GIAN
-        # time_limit_ms là TỔNG thời gian còn lại của CẢ VÁN (ví dụ 60.000ms).
-        # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
-        
-        # Cấp khoảng 80ms cho 1 nước đi (Tùy căn chỉnh sau này bằng auto_tuner)
-        time_budget_ms = min(80.0, time_limit_ms / 50.0) 
-        
-        # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn
-        if time_limit_ms < 1000:
-            time_budget_ms = 10.0
+        # 3. QUẢN LÝ NGÂN SÁCH THỜI GIAN THÔNG MINH:
+        is_per_game_budget = (obs.total_time_limit_ms is not None) or (time_limit_ms > 500)
+
+        if not is_per_game_budget:
+            # CHẾ ĐỘ A: Giới hạn theo từng nước (Per-move cap, VD: 50ms)
+            # Chừa đệm 4ms an toàn tuyệt đối để đảm bảo timeouts: 0
+            time_budget_ms = max(5.0, time_limit_ms - 4.0)
+        else:
+            # CHẾ ĐỘ B: Tổng thời gian cả ván (Total-budget, VD: 60.000ms đếm lùi)
+            time_budget_ms = min(80.0, time_limit_ms / 30.0)
+            if time_limit_ms < 1500:
+                time_budget_ms = 8.0
+            elif time_limit_ms < 4000:
+                time_budget_ms = 18.0
+
+        # Đảm bảo luôn có tối thiểu 2.5ms
+        time_budget_ms = max(2.5, time_budget_ms)
 
         # 4. Truyền bàn cờ, các nước đi hợp lệ, ngân sách thời gian và agent_instance xuống
         best_move = get_best_move_expectimax(
