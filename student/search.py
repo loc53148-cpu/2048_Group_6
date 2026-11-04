@@ -24,8 +24,8 @@ class ExpectimaxExpansion:
         self.riskiness = riskiness
 
     def maximizer(self, board: np.ndarray, cum_score: float = 0.0, depth: int = 0, start_time: float = 0.0, time_limit_ms: float = 60000.0, max_depth: int = 4) -> float:
-        # BẢO VỆ KHẨN CẤP: Ngắt đệ quy ngay nếu sắp lố thời gian nước đi (chừa hao 1.5ms)
-        if (time.time() - start_time) * 1000 > (time_limit_ms - 1.5):
+        # BẢO VỆ KHẨN CẤP: Ngắt đệ quy ngay nếu sắp lố thời gian nước đi (chừa hao 2.5ms an toàn)
+        if (time.time() - start_time) * 1000 > (time_limit_ms - 2.5):
             return cum_score + evaluate_board(board)
 
         # ĐIỀU KIỆN DỪNG: Đạt độ sâu tối đa -> Trả về điểm gộp thực tế cộng điểm đánh giá Heuristic thế trận
@@ -33,15 +33,14 @@ class ExpectimaxExpansion:
             return cum_score + evaluate_board(board)
 
         max_score = float("-inf")
-        # Duyệt qua các hướng đi hợp lệ — dùng fast_move_board (LUT) thay vì move_board Python thuần
-        for move in [Move.LEFT, Move.RIGHT, Move.UP, Move.DOWN]:
+        # Duyệt qua các hướng đi hợp lệ — ưu tiên Trái -> Lên -> Phải -> Xuống
+        for move in [Move.LEFT, Move.UP, Move.RIGHT, Move.DOWN]:
             projected_board, merge_score, valid = fast_move_board(board, move)
             if not valid:
                 continue
             
-            # CÂN BẰNG CHIẾN THUẬT: Giảm trọng số điểm ăn thô (merge_score * 0.05) để làm tiêu chí phụ phá vỡ thế cân bằng.
-            # Ép Bot bắt buộc phải tập trung tối đa giữ vững cấu trúc dồn góc mượt mà từ hàm evaluate_board.
-            score = self.expectedScore(projected_board, cum_score + (merge_score * 0.05), self.riskiness, depth + 1, start_time, time_limit_ms, max_depth)
+            # CÂN BẰNG CHIẾN THUẬT: Thưởng điểm gộp trực tiếp để ưu tiên ghép các ngói lớn
+            score = self.expectedScore(projected_board, cum_score + (merge_score * 0.1), self.riskiness, depth + 1, start_time, time_limit_ms, max_depth)
             if score > max_score:
                 max_score = score
                 
@@ -51,8 +50,8 @@ class ExpectimaxExpansion:
         return max_score
 
     def expectedScore(self, board: np.ndarray, cum_score: float, riskiness: float, depth: int, start_time: float, time_limit_ms: float = 60000.0, max_depth: int = 4) -> float:
-        # BẢO VỆ KHẨN CẤP: Kiểm tra thời gian trong tầng Chance Node
-        if (time.time() - start_time) * 1000 > (time_limit_ms - 1.5):
+        # BẢO VỆ KHẨN CẤP: Kiểm tra thời gian trong tầng Chance Node (chừa hao 2.5ms)
+        if (time.time() - start_time) * 1000 > (time_limit_ms - 2.5):
             return cum_score + evaluate_board(board)
             
         if depth >= max_depth:
@@ -61,13 +60,16 @@ class ExpectimaxExpansion:
         tile_score = []
         tile_chance = []
         row, col = board.shape
-        overload_amount = 11
+        overload_amount = 9
 
-        # SỬA LỖI ĐẾM Ô TRỐNG CHÍ MẠNG TRÊN LỚP MẢNG BOOLEAN GỐC:
-        # Thay thế mảng boolean `.sum()` chạy sai bằng hàm đếm phần tử numpy chuẩn xác
         empty_tiles_count = np.count_nonzero(board == 0)
 
-        if empty_tiles_count > overload_amount:
+        # GIAI ĐOẠN 3: CẮT TỈA XÁC SUẤT THẤP (PRUNING) ĐỂ ĐẠT DEPTH 5-6
+        # Khi bàn cờ thoáng (> 9 ô) hoặc ở độ sâu >= 2 (với > 3 ô trống):
+        # Chỉ xét ngói 2 (xác suất 90%), bỏ qua ngói 4 (10%) để giảm số nhánh đi một nửa!
+        should_prune_tile4 = (empty_tiles_count > overload_amount) or (depth >= 2 and empty_tiles_count > 3)
+
+        if should_prune_tile4:
             for i in range(row):
                 for j in range(col):
                     if board[i, j] > 0:
@@ -92,8 +94,8 @@ class ExpectimaxExpansion:
 
         tile_score = np.array(tile_score)
         
-        # Đồng bộ biến đếm trống chính xác vào logic phân chia xác suất của nhóm bạn
-        if empty_tiles_count > overload_amount:
+        # Phân chia xác suất tương ứng theo số nhánh đã duyệt
+        if should_prune_tile4:
             tile_chance = np.array(tile_chance) / len(tile_chance)
         else:
             tile_chance = np.array(tile_chance) / (len(tile_chance) / 2)
@@ -124,21 +126,21 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
 
     empty_count = np.count_nonzero(board == 0)
 
-    # CHIẾN LƯỢC QUẢN LÝ THỜI GIAN NGHIÊM NGẶT THEO SỐ Ô TRỐNG (Phân bổ quỹ 60s hợp lý)
+    # CHIẾN LƯỢC QUẢN LÝ THỜI GIAN VÀ ĐỘ SÂU THEO SỐ Ô TRỐNG:
     if empty_count > 9:
-        # Bàn cờ rất thoáng (>9 ô trống): Ép Bot đi cực nhanh (tối đa 4ms), nhìn nông để tích lũy thời gian tổng.
-        effective_time_limit_ms = min(4.0, time_budget_ms)
+        # Bàn cờ rất thoáng (>9 ô trống): Đi nhanh (tối đa 6ms), duyệt sâu 2
+        effective_time_limit_ms = min(6.0, time_budget_ms)
         max_depth_limit = 2
-    elif empty_count > 5:
-        # Giai đoạn thành hình (6-9 ô trống): Giới hạn tối đa 12ms, tìm sâu 3 bước.
-        effective_time_limit_ms = min(12.0, time_budget_ms)
+    elif empty_count > 6:
+        # Giai đoạn thành hình (7-9 ô trống): Dùng tối đa 16ms, duyệt sâu 3
+        effective_time_limit_ms = min(16.0, time_budget_ms)
         max_depth_limit = 3
-    elif empty_count > 2:
-        # Giai đoạn trung cuộc căng thẳng (3-5 ô trống): Cho phép dùng tối đa 35ms, tìm sâu 4 bước.
+    elif empty_count > 3:
+        # Giai đoạn trung cuộc (4-6 ô trống): Dùng tối đa 35ms, duyệt sâu 4-5
         effective_time_limit_ms = min(35.0, time_budget_ms)
-        max_depth_limit = 4
+        max_depth_limit = 5
     else:
-        # BÀN CỜ CỰC CHẬT (Chỉ còn 1-2 ô trống): Quyết định sống còn, bung hết thời gian còn lại để tìm đường sống.
+        # HẬU CUỘC SỐNG CÒN (1-3 ô trống): Bung toàn bộ ngân sách nước đi, duyệt sâu 5-6!
         effective_time_limit_ms = time_budget_ms
         max_depth_limit = 6
 
@@ -147,12 +149,13 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
     # VÒNG LẶP SÂU DẦN (Iterative Deepening từ depth = 1 -> max_depth_limit)
     for current_max_depth in range(1, max_depth_limit + 1):
         elapsed_ms = (time.time() - start_time) * 1000
-        # Chừa hao 1.5ms để kịp ngắt vòng lặp quay đầu an toàn
-        if elapsed_ms > (effective_time_limit_ms - 1.5):
+        # Chừa hao 2.5ms để kịp ngắt vòng lặp quay đầu an toàn (chỉ ngắt từ depth 2 trở lên)
+        if current_max_depth > 1 and elapsed_ms > (effective_time_limit_ms - 2.5):
             break
 
-        # TỐI ƯU SẮP XẾP NƯỚC ĐI BẰNG CACHE (Move Ordering)
-        ordered_moves = list(legal_moves)
+        # TỐI ƯU SẮP XẾP NƯỚC ĐI BẰNG CACHE & CHIẾN LƯỢC DỒN GÓC (Move Ordering)
+        preferred_order = [Move.LEFT, Move.UP, Move.RIGHT, Move.DOWN]
+        ordered_moves = [m for m in preferred_order if m in legal_moves]
         cached_res = lookup_cache(board)
         if cached_res:
             cached_depth, cached_score, cached_move = cached_res
@@ -162,17 +165,23 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
 
         current_depth_best_move = None
         max_score = float('-inf')
+        completed_all_moves = True
 
         # DUYỆT TÌM NƯỚC ĐI TỐT NHẤT TRONG TẦNG ĐỘ SÂU HIỆN TẠI
         # Dùng fast_move_board (LUT O(1)) thay thế move_board Python thuần
         for move in ordered_moves:
+            # Ở độ sâu >= 2, kiểm tra thời gian trước khi bắt đầu tính nhánh mới
+            if current_max_depth > 1 and (time.time() - start_time) * 1000 > (effective_time_limit_ms - 2.5):
+                completed_all_moves = False
+                break
+
             projected_board, merge_score, valid = fast_move_board(board, move)
             if not valid:
                 continue
 
             score = ai_engine.expectedScore(
                 projected_board,
-                cum_score=(merge_score * 0.05),
+                cum_score=(merge_score * 0.1),
                 riskiness=ai_engine.riskiness,
                 depth=1,
                 start_time=start_time,
@@ -184,15 +193,17 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
                 max_score = score
                 current_depth_best_move = move
 
-        # CHỐT KẾT QUẢ TẦNG: Chỉ cập nhật best_move khi tầng hiện tại hoàn thành đúng hạn
+        # CHỐT KẾT QUẢ TẦNG: Cập nhật best_move khi tầng này hoàn thành
         current_elapsed_ms = (time.time() - start_time) * 1000
-        if current_depth_best_move is not None and current_elapsed_ms < effective_time_limit_ms:
-            best_move = current_depth_best_move
-            reached_depth = current_max_depth  # Ghi lại độ sâu đã chốt thực tế
-            store_cache(board, current_max_depth, max_score, best_move)
+        if current_depth_best_move is not None:
+            if current_max_depth == 1 or (completed_all_moves and current_elapsed_ms < effective_time_limit_ms):
+                best_move = current_depth_best_move
+                reached_depth = current_max_depth  # Ghi lại độ sâu đã chốt thực tế
+                store_cache(board, current_max_depth, max_score, best_move)
 
     # GIAI ĐOẠN 1: Truyền độ sâu thực tế ra ngoài để benchmark đọc được
     if agent_instance is not None:
         agent_instance.last_completed_depth = reached_depth
+        agent_instance.search_depth = reached_depth
 
     return best_move
