@@ -115,30 +115,13 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
         return Move.UP
 
     start_time = time.time()
-    best_move = legal_moves if legal_moves else Move.UP
+    best_move = legal_moves[0] if legal_moves else Move.UP
 
     empty_count = np.count_nonzero(board == 0)
-
-    # CHIẾN LƯỢC QUẢN LÝ THỜI GIAN NGHIÊM NGẶT THEO SỐ Ô TRỐNG (Phân bổ quỹ 60s hợp lý)
-    if empty_count > 9:
-        # Bàn cờ rất thoáng (>9 ô trống): Ép Bot đi cực nhanh (tối đa 4ms), nhìn nông để tích lũy thời gian tổng.
-        effective_time_limit_ms = min(4.0, time_budget_ms)
-        max_depth_limit = 2
-    elif empty_count > 5:
-        # Giai đoạn thành hình (6-9 ô trống): Giới hạn tối đa 12ms, tìm sâu 3 bước.
-        effective_time_limit_ms = min(12.0, time_budget_ms)
-        max_depth_limit = 3
-    elif empty_count > 2:
-        # Giai đoạn trung cuộc căng thẳng (3-5 ô trống): Cho phép dùng tối đa 35ms, tìm sâu 4 bước.
-        effective_time_limit_ms = min(35.0, time_budget_ms)
-        max_depth_limit = 4
-    else:
-        # BÀN CỜ CỰC CHẬT (Chỉ còn 1-2 ô trống): Quyết định sống còn, bung hết thời gian còn lại để tìm đường sống.
-        effective_time_limit_ms = time_budget_ms
-        max_depth_limit = 6
-
-    ai_engine = ExpectimaxExpansion(riskiness=1.0)
-
+    #04/11/2026
+    effective_time_limit_ms = time_budget_ms
+    max_depth_limit = 5
+    ai_engine = ExpectimaxExpansion()
     # VÒNG LẶP SÂU DẦN (Iterative Deepening từ depth = 1 -> max_depth_limit)
     for current_max_depth in range(1, max_depth_limit + 1):
         elapsed_ms = (time.time() - start_time) * 1000
