@@ -17,7 +17,7 @@ from student.search import get_best_move_expectimax
 from student.tt_cache import clear_cache
 
 class Agent:
-    # 2. Đổi tên team cho ngầu, hiển thị trên UI
+    # 2. Đổi tên team
     name = "Group_6" 
 
     def __init__(self):
