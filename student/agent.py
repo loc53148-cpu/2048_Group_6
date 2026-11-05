@@ -7,18 +7,24 @@ from __future__ import annotations
 import numpy as np
 import random
 import math
+import time
+
 
 from game2048.observation import Observation
 from game2048.rules import move_board
 from game2048.types import Move
+from game2048.bitboard import unpack_board, pack_board
 
 # 1. Kéo vũ khí hạng nặng của team vào đây
 from student.search import get_best_move_expectimax
 from student.tt_cache import clear_cache
+from student.heuristic import evaluate_board
+from student.reinforcement_learning import MCTSNode
 
 class Agent:
     # 2. Đổi tên team cho ngầu, hiển thị trên UI
     name = "Group_6" 
+    
 
     def reset(self, seed: int | None = None) -> None:
         """Xóa cache/trạng thái giữa hai ván để không vi phạm luật State"""
@@ -28,7 +34,6 @@ class Agent:
             init_zobrist() 
         except NameError:
             pass # Phòng hờ Phương chưa kịp viết hàm này thì game vẫn chạy được
-
     def choose_move(self, obs: Observation, time_limit_ms: float) -> Move:
         """Trả về đúng một phần tử Move có trong obs.legal_moves."""
         
@@ -40,6 +45,13 @@ class Agent:
         # Ta không được đưa hết cho Minh chạy 1 nước, nếu không nước sau sẽ bị Timeout.
         
         # Cấp khoảng 80ms cho 1 nước đi (Tùy căn chỉnh sau này bằng auto_tuner)
+        b_board = pack_board(obs.board)
+        root = MCTSNode(b_board)
+        try:
+            return root.search(300)
+        except Exception as e:
+            print(e)
+            return random.choice(obs.legal_moves)
         time_budget_ms = min(80.0, time_limit_ms / 50.0) 
         
         # Nếu tổng giờ ván đấu sắp cạn, bóp thời gian đệ quy lại cực ngắn để sinh tồn

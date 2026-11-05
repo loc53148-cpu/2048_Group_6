@@ -7,8 +7,9 @@ import random
 import numpy as np
 import math
 from game2048.types import Move
-from game2048.rules import move_board, legal_moves, is_game_over
 from game2048.heuristic import monotonicity, smoothness, merge_potential, HeuristicWeights
+from game2048.bitboard import pack_board, unpack_board
+from student.bit_rules import move_bitboard
 
 # ĐỒNG BỘ LINH CÁT 2: Quản lý bộ nhớ đệm do Phương viết từ file tt_cache.py
 from student.tt_cache import lookup_cache, store_cache
@@ -21,19 +22,19 @@ class ExpectimaxExpansion:
         self.tile_spawn_chance = tile_spawn_chance
         self.riskiness = riskiness
 
-    def maximizer(self, board: np.ndarray, cum_score: float = 0.0, depth: int = 0, start_time: float = 0.0, time_limit_ms: float = 60000.0, max_depth: int = 4) -> float:
+    def maximizer(self, board: int, cum_score: float = 0.0, depth: int = 0, start_time: float = 0.0, time_limit_ms: float = 60000.0, max_depth: int = 4) -> float:
         # BẢO VỆ KHẨN CẤP: Ngắt đệ quy ngay nếu sắp lố thời gian nước đi (chừa hao 1.5ms)
         if (time.time() - start_time) * 1000 > (time_limit_ms - 1.5):
-            return cum_score + evaluate_board(board)
+            return cum_score + evaluate_board(unpack_board(board))
 
         # ĐIỀU KIỆN DỪNG: Đạt độ sâu tối đa -> Trả về điểm gộp thực tế cộng điểm đánh giá Heuristic thế trận
         if depth >= max_depth:
-            return cum_score + evaluate_board(board)
+            return cum_score + evaluate_board(unpack_board(board))
 
         max_score = float("-inf")
         # Duyệt qua các hướng đi hợp lệ
-        for move in [Move.LEFT, Move.RIGHT, Move.UP, Move.DOWN]:
-            projected_board, merge_score, valid = move_board(board, move)
+        for move in Move:
+            projected_board, merge_score, valid = move_bitboard(board, move)
             if not valid:
                 continue
             
@@ -44,7 +45,7 @@ class ExpectimaxExpansion:
                 max_score = score
                 
         if max_score == float("-inf"):
-            return cum_score + evaluate_board(board)
+            return cum_score + evaluate_board(unpack_board(board))
             
         return max_score
 
@@ -183,5 +184,4 @@ def get_best_move_expectimax(board: np.ndarray, legal_moves: list[Move], time_bu
         if current_depth_best_move is not None and current_elapsed_ms < effective_time_limit_ms:
             best_move = current_depth_best_move
             store_cache(board, current_max_depth, max_score, best_move)
-
     return best_move
